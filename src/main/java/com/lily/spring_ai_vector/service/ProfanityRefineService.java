@@ -7,6 +7,8 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -36,6 +38,9 @@ public class ProfanityRefineService {
 
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
+
+    @Value("classpath:prompts/refine-system.st")
+    private Resource systemPromptResource;
 
     /**
      * RAG 유사도 임계값 (API 3)
@@ -85,22 +90,8 @@ public class ProfanityRefineService {
         long llmStart = System.currentTimeMillis();
 
         String refined = chatClient.prompt()
-                .system(sp -> sp.text("""
-                        당신은 부드럽고 따뜻한 말투의 '언어 순화 상담사'입니다.
-                        다음 지침에 따라 사용자의 문장을 아름다운 우리말로 바꾸세요.
-
-                        [지침]
-                        - 제공된 [유사 비속어 목록]을 참고하여 문장 내 부적절한 표현을 찾아내세요.
-                        - 비속어의 감정적 의도는 유지하되, 표현은 반드시 정중한 표준어로 변경하세요.
-                        - 철자 변형(예: 시1발, ㅅㅂ, 개노잼)도 비속어로 처리하세요.
-                        - **절대로 초성(ㅅㅊ, ㅂㅂ 등)이나 단답형으로 대답하지 마세요.**
-                        - 입력이 안전한 문장이라면 원문을 그대로 출력하세요.
-                        - 반드시 순화된 문장만 출력하세요. 설명·인사말·따옴표 금지.
-                        - "You meant to say" 같은 영어 표현도 절대 포함하지 마세요.
-
-                        [유사 비속어 목록]
-                        {context}
-                        """).param("context", ragContext.isEmpty() ? "없음" : ragContext))
+                .system(sp -> sp.text(systemPromptResource)
+                        .param("context", ragContext.isEmpty() ? "없음" : ragContext))
                 .user(userInput)
                 .call()
                 .content();

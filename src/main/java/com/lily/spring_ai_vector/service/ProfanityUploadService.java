@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -86,6 +87,31 @@ public class ProfanityUploadService {
     // ──────────────────────────────────────────
     //  [2] 파일 업로드 (Multipart)
     // ──────────────────────────────────────────
+
+    /**
+     * 다중 파일을 순서대로 처리하여 전체 저장 수 합산 반환
+     */
+    public ProfanityUploadResponse uploadFromFiles(
+            List<MultipartFile> files,
+            String category,
+            int severity
+    ) throws IOException {
+        int totalSaved = 0;
+        StringBuilder sourceTypes = new StringBuilder();
+
+        for (MultipartFile file : files) {
+            ProfanityUploadResponse resp = uploadFromFile(file, category, severity);
+            totalSaved += resp.savedCount();
+            if (!sourceTypes.isEmpty()) sourceTypes.append(", ");
+            sourceTypes.append(file.getOriginalFilename());
+        }
+
+        return new ProfanityUploadResponse(
+                totalSaved,
+                files.size() + "개 파일에서 총 " + totalSaved + "개가 저장되었습니다.",
+                sourceTypes.toString()
+        );
+    }
 
     /**
      * MultipartFile 을 받아 확장자에 따라 파서를 분기

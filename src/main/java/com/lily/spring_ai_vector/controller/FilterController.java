@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * 비속어 필터링 API 컨트롤러
@@ -74,7 +75,7 @@ public class FilterController {
      *
      * Postman 설정:
      *  - Body → form-data
-     *  - Key: "file"     Value: [파일 선택] (.txt / .md / .json)
+     *  - Key: "files"    Value: [파일 선택] (.txt / .md / .json) → 여러 개 추가 가능!
      *  - Key: "category" Value: PROFANITY (선택, 기본값=파일명 추론)
      *  - Key: "severity" Value: 2         (선택, 기본값=1)
      *
@@ -82,6 +83,7 @@ public class FilterController {
      *  - 수천~수만 줄의 대용량 비속어 사전을 한 번에 업로드
      *  - 파일 형식(txt/md/json)에 따라 자동 파서 분기
      *  - API 기반 업로드로 서버 재시작 없이 비속어 사전 갱신 가능
+     *  - 다중 파일 업로드 지원 → 여러 사전 파일을 한 번에 등록 가능
      */
     @PostMapping(
             value = "/api/admin/profanity/file",
@@ -89,11 +91,11 @@ public class FilterController {
             produces = MediaType.APPLICATION_JSON_VALUE
     )
     public ResponseEntity<ProfanityUploadResponse> uploadFile(
-            @RequestParam("file") MultipartFile file,
+            @RequestParam("files") List<MultipartFile> files,
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "severity", defaultValue = "1") int severity
     ) throws IOException {
-        ProfanityUploadResponse response = uploadService.uploadFromFile(file, category, severity);
+        ProfanityUploadResponse response = uploadService.uploadFromFiles(files, category, severity);
         return ResponseEntity.ok(response);
     }
 

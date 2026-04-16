@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * [API 2] RAG 기반 비속어 마스킹 서비스
@@ -42,10 +41,11 @@ public class ProfanityFilterService {
      *
      * 설정 근거:
      *  - 0.80 이상: 거의 동일한 표현만 탐지 (오탐↓, 미탐↑)
-     *  - 0.75: 변형 표현까지 탐지하는 균형점 (현재 설정)
+     *  - 0.80: 현재 설정 - 오탐 줄이기 위해 상향 조정
+     *  - 0.75: 변형 표현까지 탐지하는 균형점
      *  - 0.70 이하: 무관한 단어까지 탐지될 위험 (오탐↑)
      */
-    private static final double SIMILARITY_THRESHOLD = 0.75;
+    private static final double SIMILARITY_THRESHOLD = 0.80;
 
     /**
      * RAG 검색 시 반환할 상위 문서 수
@@ -88,12 +88,16 @@ public class ProfanityFilterService {
 
         // 2-gram 추가 탐지: 연속된 두 토큰이 합쳐서 비속어인 경우
         // 예) "개" + "새끼" 처럼 분리된 경우
+        // ⚠️ AIHub 등 문장 단위 데이터가 포함된 경우 오탐 가능성이 높음
+        //    → 두 토큰 모두 단독으로 탐지되지 않은 경우에만 2-gram 검사
+        //    → threshold 를 단독 토큰보다 높게 적용 (0.90)
+        final double BIGRAM_THRESHOLD = 0.90;
         for (int i = 0; i < maskedTokens.length - 1; i++) {
             // 이미 마스킹된 토큰은 건너뜀
             if (maskedTokens[i].startsWith("*") || maskedTokens[i + 1].startsWith("*")) continue;
 
             String bigram = tokens[i] + tokens[i + 1];
-            if (isProfanity(bigram)) {
+            if (isProfanityWithThreshold(bigram, BIGRAM_THRESHOLD)) {
                 detectedWords.add(bigram);
                 maskedTokens[i] = "*".repeat(Math.max(tokens[i].length(), 3));
                 maskedTokens[i + 1] = "*".repeat(Math.max(tokens[i + 1].length(), 3));
@@ -128,6 +132,10 @@ public class ProfanityFilterService {
      *    Spring AI 의 similarityThreshold 는 1-distance 기반이므로 주의
      */
     private boolean isProfanity(String token) {
+        return isProfanityWithThreshold(token, SIMILARITY_THRESHOLD);
+    }
+
+    private boolean isProfanityWithThreshold(String token, double threshold) {
         if (token == null || token.length() < 1) return false;
 
         try {
@@ -135,16 +143,32 @@ public class ProfanityFilterService {
                     SearchRequest.builder()
                             .query(token)
                             .topK(TOP_K)
-                            .similarityThreshold(SIMILARITY_THRESHOLD)
+                            .similarityThreshold(0.0)  // 유사도 로그 확인용: 모든 결과 조회
                             .build()
             );
 
-            if (!results.isEmpty()) {
-                log.debug("[비속어 탐지] 토큰=\"{}\" → 유사 단어: {}",
-                        token,
-                        results.stream().map(Document::getText).collect(Collectors.joining(", ")));
-                return true;
-            }
+            results.forEach(doc -> {
+                Object distObj = doc.getMetadata().get("distance");
+                double score = distObj != null
+                        ? 1.0 - ((Number) distObj).doubleValue()
+                        : -1.0;
+                String matched = doc.getText();
+                boolean over = score >= threshold;
+                log.debug("[RAG] 토큰=\"{}\" → 유사단어=\"{}\" | 유사도={} | 임계값={} | {}",
+                        token, matched, String.format("%.4f", score),
+                        threshold, over ? "✅ 비속어 판정" : "❌ 통과");
+            });
+
+            boolean isProfanity = results.stream().anyMatch(doc -> {
+                Object distObj = doc.getMetadata().get("distance");
+                double score = distObj != null
+                        ? 1.0 - ((Number) distObj).doubleValue()
+                        : -1.0;
+                return score >= threshold;
+            });
+
+            if (isProfanity) return true;
+
         } catch (Exception e) {
             log.warn("[벡터 검색 오류] 토큰=\"{}\": {}", token, e.getMessage());
         }

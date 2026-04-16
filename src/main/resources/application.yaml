@@ -10,8 +10,8 @@ spring:
   servlet:
     multipart:
       enabled: true
-      max-file-size: 50MB      # 대용량 비속어 사전 파일 업로드 허용
-      max-request-size: 55MB
+      max-file-size: 200MB     # 대용량 비속어 사전 파일 업로드 허용
+      max-request-size: 210MB
 
   ai:
     ollama:
