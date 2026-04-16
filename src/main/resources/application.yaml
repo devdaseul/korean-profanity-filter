@@ -1,0 +1,38 @@
+spring:
+  profiles:
+    active: local  # 로컬 개발 시 application-local.yaml 병합
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/postgres
+    username: postgres
+    password:  # application-local.yaml 에서 설정 (git 제외)
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB      # 대용량 비속어 사전 파일 업로드 허용
+      max-request-size: 55MB
+
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: llama3
+          temperature: 0.1
+      embedding:
+        options:
+          model: bge-m3
+
+    vectorstore:
+      pgvector:
+        table-name: profanity_vectors
+        dimensions: 1024
+        initialize-schema: false
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+
+logging:
+  level:
+    com.lily.spring_ai_vector: DEBUG
+    org.springframework.ai: INFO
