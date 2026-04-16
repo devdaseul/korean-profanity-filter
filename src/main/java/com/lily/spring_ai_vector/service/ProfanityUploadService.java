@@ -341,7 +341,7 @@ public class ProfanityUploadService {
      * VectorStore 메타데이터 Map 빌더
      *
      * 왜 이 필드들?
-     *  - category: RAG 검색 시 WHERE category = 'PROFANITY' pre-filter 적용
+     *  - category: RAG 검색 시 WHERE category = 'ABUSE' 등 pre-filter 적용
      *  - severity: 마스킹 강도 분기 (1→*, 2→**, 3→***)
      *  - source_type: 파일 유형별 재처리·삭제 추적
      *  - word_type: WORD/PHRASE/REGEX 검색 전략 분기
@@ -368,12 +368,24 @@ public class ProfanityUploadService {
      *
      * 왜 자동 추론?
      *  - 관리자가 category 파라미터를 생략했을 때 파일명 컨벤션으로 자동 분류
-     *  - hate → HATE_SPEECH, sexual / adult → SEXUAL, 그 외 → PROFANITY
+     *
+     * 카테고리 기준 (AIHub 데이터셋 기준):
+     *  - ABUSE        : 욕설·모욕
+     *  - CENSURE      : 비난·질책
+     *  - CRIME        : 범죄 관련
+     *  - DISCRIMINATION: 차별 표현
+     *  - HATE         : 혐오 표현
+     *  - SEXUAL       : 성적 표현
+     *  - VIOLENCE     : 폭력 관련
      */
     private String inferCategory(String filename) {
         String lower = filename.toLowerCase();
-        if (lower.contains("hate")) return "HATE_SPEECH";
+        if (lower.contains("hate"))                          return "HATE";
         if (lower.contains("sexual") || lower.contains("adult")) return "SEXUAL";
-        return "PROFANITY";
+        if (lower.contains("violence"))                      return "VIOLENCE";
+        if (lower.contains("crime"))                         return "CRIME";
+        if (lower.contains("discrimination"))                return "DISCRIMINATION";
+        if (lower.contains("censure"))                       return "CENSURE";
+        return "ABUSE"; // 기본값: 욕설·모욕
     }
 }

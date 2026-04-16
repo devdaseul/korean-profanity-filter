@@ -45,7 +45,7 @@ public class FilterController {
      * Postman Body 예시:
      * {
      *   "words": ["개새끼", "시발", "병신아"],
-     *   "category": "PROFANITY",
+     *   "category": "ABUSE",
      *   "severity": 2,
      *   "wordType": "WORD"
      * }
@@ -76,7 +76,8 @@ public class FilterController {
      * Postman 설정:
      *  - Body → form-data
      *  - Key: "files"    Value: [파일 선택] (.txt / .md / .json) → 여러 개 추가 가능!
-     *  - Key: "category" Value: PROFANITY (선택, 기본값=파일명 추론)
+     *  - Key: "category" Value: ABUSE (선택, 기본값=파일명 추론)
+     *  -                           ABUSE / CENSURE / CRIME / DISCRIMINATION / HATE / SEXUAL / VIOLENCE
      *  - Key: "severity" Value: 2         (선택, 기본값=1)
      *
      * 왜 Multipart?
