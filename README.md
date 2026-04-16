@@ -4,14 +4,14 @@
 
 <br>
 
-## 📌 프로젝트 소개
+## 프로젝트 소개
 
 텍스트 내 비속어를 **벡터 유사도 검색(RAG)** 으로 탐지하고,  
 **Ollama LLM** 을 통해 자연스러운 표현으로 순화하는 Spring Boot 백엔드 프로젝트입니다.
 
 <br>
 
-## 🛠️ 기술 스택
+## 기술 스택
 
 | 분류 | 기술 |
 |------|------|
@@ -25,7 +25,7 @@
 
 <br>
 
-## 🏗️ 아키텍처
+## 아키텍처
 
 ```
 [Client]
@@ -46,7 +46,7 @@
 
 <br>
 
-## 📡 API 명세
+## API 명세
 
 ### 1. 비속어 등록 (관리자)
 
@@ -102,7 +102,7 @@ Content-Type: application/json
 
 <br>
 
-## ⚙️ 로컬 실행 방법
+## 로컬 실행 방법
 
 ### 사전 준비
 - **PostgreSQL** (port: 5433) + pgvector 확장 설치
@@ -141,7 +141,7 @@ spring:
 
 <br>
 
-## 📁 프로젝트 구조
+## 프로젝트 구조
 
 ```
 src/main/java/com/lily/spring_ai_vector/
@@ -164,7 +164,7 @@ src/main/java/com/lily/spring_ai_vector/
 
 <br>
 
-## 🔒 보안 참고사항
+## 보안 참고사항
 
 - `application.yaml` 의 DB 패스워드는 환경변수로 분리 권장
 - `/api/admin/**` 경로는 향후 Spring Security로 ROLE_ADMIN 인증 적용 예정
