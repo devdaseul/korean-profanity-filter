@@ -1,11 +1,28 @@
 spring:
   profiles:
     active: local  # 로컬 개발 시 application-local.yaml 병합
+  config:
+    import: classpath:filter-pipeline.yaml
+  jmx:
+    enabled: true
 
   datasource:
     url: jdbc:postgresql://localhost:5433/postgres
     username: postgres
     password:  # application-local.yaml 에서 설정 (git 제외)
+
+  sql:
+    init:
+      mode: always          # schema.sql 을 항상 실행 (테이블 없으면 생성)
+      platform: postgresql
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
 
   servlet:
     multipart:
