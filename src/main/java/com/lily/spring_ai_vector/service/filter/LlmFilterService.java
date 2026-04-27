@@ -11,9 +11,6 @@ import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-
 /**
  * [L3] LLM 기반 최종 판정 서비스
  *
@@ -97,18 +94,6 @@ public class LlmFilterService {
 
         log.info("[L3-LLM] ── 완료 | {} ─────────────────────────", isProfanity ? "★ PROFANITY" : "SAFE");
         return new Result(input, normalized, llmRaw, isProfanity);
-    }
-
-    public Map<String, Object> checkAsMap(String input) {
-        Result r = check(input);
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("originalText", r.originalText());
-        response.put("llmResponse",  r.llmRaw());
-        response.put("isProfanity",  r.isProfanity());
-        response.put("message",      r.isProfanity()
-                ? "L3-LLM에서 최종 비속어로 판정되어 DB에 기록(보류상태)되었습니다."
-                : "최종 안전한 문장으로 판정되었습니다.");
-        return response;
     }
 
     // ── LLM 응답 파서 (LlmFilterService 전용) ─────────────────────
