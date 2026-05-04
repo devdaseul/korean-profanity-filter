@@ -56,7 +56,6 @@ public class RagFilterService {
     }
 
     public Map<String, Object> checkAsMap(String input) {
-        // 단독 API(/api/filter/l2-rag) 호출 시나리오를 위한 정규화 처리
         String normalized = localFilterService.normalize(input);
         
         Result r = check(input, normalized);

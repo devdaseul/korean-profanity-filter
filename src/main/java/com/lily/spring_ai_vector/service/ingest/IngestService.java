@@ -11,17 +11,16 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
-import org.springframework.util.StringUtils;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * 벡터 DB 임베딩 저장 서비스
- *
- * 입력 경로 2가지:
- *  1. texts  : API로 직접 전달된 문자열 목록
- *  2. logIds : 관리자가 승인한 LLM 판정 로그 ID → normalizedText 를 임베딩
+ * [관리자 전용] 벡터 DB 적재(Ingest) 서비스
+ * 
+ * 1. 데이터 수집: 직접 입력된 단어 + LLM이 찾아낸 미승인 로그
+ * 2. 규격화: 수집된 텍스트를 Spring AI의 'Document' 객체로 변환
+ * 3. 벡터화 및 저장: VectorStore를 통해 임베딩 모델 호출 후 pgvector에 저장
  */
 @Slf4j
 @Service
@@ -33,52 +32,51 @@ public class IngestService {
 
     @Transactional
     public RegisterResponse ingest(RegisterRequest request) {
-        log.info("[Ingest] 처리 대상 | 입력값: {}건, 로그번호: {}건",
-                CollectionUtils.isEmpty(request.texts())  ? 0 : request.texts().size(),
-                CollectionUtils.isEmpty(request.logIds()) ? 0 : request.logIds().size());
-
-        Set<String> combinedWords = new HashSet<>();
-
-        // 1. 직접 입력 단어(texts) 처리
-        if (!CollectionUtils.isEmpty(request.texts())) {
-            request.texts().stream()
-                    .filter(StringUtils::hasText)
-                    .map(String::trim)
-                    .forEach(combinedWords::add);
+        
+        Set<String> wordsToEmbed = new HashSet<>();
+        
+        // 1-A. 관리자가 API로 직접 입력한 단어들 추가
+        if (request.texts() != null) {
+            wordsToEmbed.addAll(request.texts());
         }
 
-        // 2. 관리자 승인 로그(logIds) 처리
-        if (!CollectionUtils.isEmpty(request.logIds())) {
+        // 1-B. LLM이 찾아냈던 '미검토 로그(logIds)'를 확인하고 승인 처리 후 추가
+        if (request.logIds() != null && !request.logIds().isEmpty()) {
             List<LlmJudgeLog> logs = logRepository.findAllById(request.logIds());
-            for (LlmJudgeLog refinedLog : logs) {
-                if (Boolean.TRUE.equals(refinedLog.getIsTrained())) continue;  // 이미 학습된 건 스킵
-                if (!StringUtils.hasText(refinedLog.getNormalizedText())) continue;
-
-                combinedWords.add(refinedLog.getNormalizedText());
-                refinedLog.setIsTrained(true);
-                refinedLog.setReviewedBy("ADMIN_UI");
-                refinedLog.setCategory(Category.fromString(request.category()));
+            
+            for (LlmJudgeLog logItem : logs) {
+                if (Boolean.TRUE.equals(logItem.getIsTrained()) || logItem.getNormalizedText() == null) {
+                    continue;
+                }
+                
+                wordsToEmbed.add(logItem.getNormalizedText());
+                logItem.setIsTrained(true);
+                logItem.setReviewedBy("ADMIN");
+                logItem.setCategory(Category.fromString(request.category()));
             }
         }
 
-        // 3. 저장 대상 없음 체크
-        if (combinedWords.isEmpty()) {
-            log.warn("[Ingest] 저장할 데이터가 없습니다.");
-            return new RegisterResponse(0, "저장할 데이터가 없습니다.", "NONE");
-        }
+        log.info("[Ingest] 임베딩 대기 문서 수: {}건", wordsToEmbed.size());
 
-        // 4. Document 변환 후 벡터 DB 저장
-        String category = request.category();
-        List<Document> docsToEmbed = combinedWords.stream()
-                .map(word -> new Document(word, Map.of("category", category, "source", "ADMIN_DIRECT")))
-                .toList();
+        List<Document> documents = wordsToEmbed.stream()
+                .filter(word -> !word.isBlank())
+                .map(word -> new Document(
+                        word, 
+                        Map.of(
+                            "category", request.category(),
+                            "source", "ADMIN_DIRECT"
+                        )
+                ))
+                .collect(Collectors.toList());
 
-        log.info("[Ingest] 벡터 DB 저장 진행 | {}건", docsToEmbed.size());
+        vectorStore.add(documents);
         
-        vectorStore.add(docsToEmbed);
-        log.info("[Ingest] 벡터 임베딩 저장 완료");
-
-        return new RegisterResponse(docsToEmbed.size(), "성공적으로 반영되었습니다.", "SUCCESS");
+        log.info("[Ingest] 벡터 DB 저장 완료!");
+        return new RegisterResponse(
+                documents.size(), 
+                "성공적으로 반영되었습니다.", 
+                "SUCCESS", 
+                new ArrayList<>(wordsToEmbed)
+        );
     }
-    
 }

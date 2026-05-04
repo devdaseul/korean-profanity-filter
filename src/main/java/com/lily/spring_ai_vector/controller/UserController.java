@@ -5,13 +5,12 @@ import com.lily.spring_ai_vector.dto.PipelineResponse;
 import com.lily.spring_ai_vector.service.filter.LocalFilterService;
 import com.lily.spring_ai_vector.service.filter.LlmFilterService;
 import com.lily.spring_ai_vector.service.filter.RagFilterService;
+import com.lily.spring_ai_vector.service.pipeline.PipelineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.context.request.RequestAttributes;
-import org.springframework.web.context.request.RequestContextHolder;
 
 import java.util.Map;
 
@@ -27,7 +26,10 @@ public class UserController {
     private final LocalFilterService localFilterService;
     private final RagFilterService ragFilterService;
     private final LlmFilterService llmFilterService;
+    private final PipelineService pipelineService;
     private final ChatClient chatClient;
+
+
 
     @PostMapping("/l1-local")
     public ResponseEntity<Map<String, Object>> l1LocalFilter(@RequestBody TextCheckRequest request) {
@@ -39,6 +41,7 @@ public class UserController {
         return ResponseEntity.ok(result);
     }
 
+
     @PostMapping("/l2-rag")
     public ResponseEntity<Map<String, Object>> l2RagFilter(@RequestBody TextCheckRequest request) {
         log.info("[API-L2] POST /api/user/l2-rag | 입력: '{}'", request.text());
@@ -49,6 +52,7 @@ public class UserController {
         return ResponseEntity.ok(result);
     }
 
+
     @PostMapping("/l3-llm")
     public ResponseEntity<Map<String, Object>> l3LlmFilter(@RequestBody TextCheckRequest request) {
         log.info("[API-L3] POST /api/user/l3-llm | 입력: '{}'", request.text());
@@ -56,45 +60,45 @@ public class UserController {
         Map<String, Object> result = llmFilterService.checkAsMap(request.text());
         log.info("[API-L3] 완료 | detectedBy={}", result.get("detectedBy"));
 
-
         return ResponseEntity.ok(result);
     }
+
 
     @PostMapping("/pipeline")
     public ResponseEntity<Map<String, Object>> chat(@RequestBody TextCheckRequest request) {
         log.info("[API-통합] POST /api/user/pipeline | 입력: '{}'", request.text());
 
-        var chatResponse = chatClient.prompt()
-                .user(request.text())
-                .call()
-                .chatResponse();
+        // 1. Advisor 대신 직접 파이프라인 서비스 호출 (L1 -> L2 -> L3 순차 검증)
+        PipelineResponse pr = pipelineService.run(request.text());
 
-        String responseText = chatResponse.getResult().getOutput().getContent();
-        
-        // Advisor에서 저장해둔 단계별 상세 결과 가져오기
-        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
-        PipelineResponse pr = (attrs != null) ? (PipelineResponse) attrs.getAttribute("pipelineResult", RequestAttributes.SCOPE_REQUEST) : null;
+        // 2. 비속어 차단 시 LLM을 호출하지 않고 즉시 응답 반환 (Fast-Exit)
+        if (pr.isProfanity()) {
+            String blockedMessage = String.format("[비속어 차단] '%s' | 해당 문장은 %s 단계에서 차단되었습니다.",
+                    request.text(), pr.detectedBy());
 
-        // 차단 텍스트가 반환되었다면 차단 케이스로 판정
-        if (responseText != null && responseText.startsWith("[비속어 차단]")) {
             return ResponseEntity.ok(Map.of(
                     "input",       request.text(),
                     "isProfanity", true,
-                    "detectedBy",  pr != null ? pr.detectedBy() : "L1-LOCAL",
-                    "aiResponse",  responseText,
-                    "pipeline_ms", pr != null ? pr.pipelineMs() : 0,
-                    "stageResults", pr != null ? pr.stageResults() : "상세 결과 없음"
+                    "detectedBy",  pr.detectedBy(),
+                    "aiResponse",  blockedMessage,
+                    "pipeline_ms", pr.pipelineMs(),
+                    "stageResults", pr.stageResults() != null ? pr.stageResults() : "상세 결과 없음"
             ));
         }
 
-        // 안전하게 통과되어 진짜 AI 답변을 받은 케이스
+        // 3. 파이프라인(L1, L2, L3)을 모두 무사히 통과한 경우에만 실제 LLM 호출 진행
+        String responseText = chatClient.prompt()
+                .user(request.text())
+                .call()
+                .content();
+
         return ResponseEntity.ok(Map.of(
                 "input",       request.text(),
                 "isProfanity", false,
                 "detectedBy",  "미탐지 (안전)",
                 "aiResponse",  responseText,
-                "pipeline_ms", pr != null ? pr.pipelineMs() : 0,
-                "stageResults", pr != null ? pr.stageResults() : "상세 결과 없음"
+                "pipeline_ms", pr.pipelineMs(),
+                "stageResults", pr.stageResults() != null ? pr.stageResults() : "상세 결과 없음"
         ));
     }
 }
