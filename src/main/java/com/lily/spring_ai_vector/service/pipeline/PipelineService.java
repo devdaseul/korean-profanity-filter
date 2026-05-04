@@ -4,16 +4,15 @@ import com.lily.spring_ai_vector.dto.PipelineResponse;
 import com.lily.spring_ai_vector.service.filter.LlmFilterService;
 import com.lily.spring_ai_vector.service.filter.LocalFilterService;
 import com.lily.spring_ai_vector.service.filter.RagFilterService;
+import com.lily.spring_ai_vector.enums.StageStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * L1 → L2 → L3 파이프라인 오케스트레이터
  *
- * L1(로컬: Regex → Blacklist → Fuzzy) → L2(RAG 유사도) → L3(LLM 판정) 순서로
- * 각 단계에서 비속어가 탐지되면 이후 단계는 스킵(Fast-Exit)하고 즉시 결과 반환
+ * 각 단계에서 탐지되면 이후 단계는 스킵(Fast-Exit)하고 즉시 반환
  */
 @Slf4j
 @Service
@@ -24,52 +23,54 @@ public class PipelineService {
     private final RagFilterService ragFilterService;
     private final LlmFilterService llmFilterService;
 
-    @Transactional
     public PipelineResponse run(String userInput) {
         long start = System.currentTimeMillis();
-        log.info("[Pipeline] ════════════════════════════════════");
-        log.info("[Pipeline] START | 입력: '{}'", userInput);
-        log.info("[Pipeline] ════════════════════════════════════");
+        log.info("[Pipeline] 시작 | 입력: '{}'", userInput);
 
-        // ── L1: Local Filter ──────────────────────────────────
-        log.info("[Pipeline] → L1(로컬 필터) 진입");
+        // L1: Local Filter
+        log.info("[Pipeline] L1(로컬 필터) 진입");
         LocalFilterService.Result l1 = localFilterService.check(userInput);
         if (l1.isProfanity()) {
-            log.info("[Pipeline] ★ L1에서 차단 | 소요: {}ms", elapsed(start));
-            log.info("[Pipeline] ════════════════════════════════════");
+            log.info("[Pipeline] L1 차단 | 소요: {}ms", elapsed(start));
             return buildFastExitResponse(userInput, l1.normalized(), "L1-Local", start,
-                            l1.regexHit() ? "탐지" : "통과",
-                    l1.blacklistHit() ? "탐지" : "통과",
-                    l1.fuzzyHit() ? "탐지" : "통과",
-                    "스킵", "스킵");
+                    l1.regexHit()     ? StageStatus.DETECTED.getLabel() : StageStatus.PASSED.getLabel(),
+                    l1.blacklistHit() ? StageStatus.DETECTED.getLabel() : StageStatus.PASSED.getLabel(),
+                    l1.fuzzyHit()     ? StageStatus.DETECTED.getLabel() : StageStatus.PASSED.getLabel(),
+                    StageStatus.SKIPPED.getLabel(), StageStatus.SKIPPED.getLabel());
         }
-        log.info("[Pipeline] ✓ L1 통과 → L2(RAG) 진입");
+        log.info("[Pipeline] L1 통과 -> L2(RAG) 진입");
 
-        // ── L2: RAG 유사도 검색 ───────────────────────────────
-        RagFilterService.Result l2 = ragFilterService.check(l1.normalized());
+        // L2: RAG 유사도 검색
+        // L1에서 생성된 정규화 텍스트와 원문을 함께 넘겨줌
+        RagFilterService.Result l2 = ragFilterService.check(userInput, l1.normalized());
         if (l2.isProfanity()) {
-            log.info("[Pipeline] ★ L2에서 차단 | 소요: {}ms", elapsed(start));
-            log.info("[Pipeline] ════════════════════════════════════");
-            return buildFastExitResponse(userInput, l1.normalized(), "L2-RAG", start,
-                            "통과", "통과", "통과", "탐지", "스킵");
+            log.info("[Pipeline] L2 차단 | 소요: {}ms", elapsed(start));
+            return PipelineResponse.ofRag(userInput, l1.normalized(), elapsed(start),
+                    new PipelineResponse.StageResults(
+                            l1.normalized(),
+                            StageStatus.PASSED.getLabel(), StageStatus.PASSED.getLabel(),
+                            StageStatus.PASSED.getLabel(), StageStatus.DETECTED.getLabel(),
+                            StageStatus.SKIPPED.getLabel()));
         }
-        log.info("[Pipeline] ✓ L2 통과 → L3(LLM) 진입");
 
-        // ── L3: LLM 최종 판단 ────────────────────────────────
-        LlmFilterService.Result l3 = llmFilterService.check(l1.normalized());
+        log.info("[Pipeline] L2 통과 -> L3(LLM) 진입");
 
-        log.info("[Pipeline] ════════════════════════════════════");
-        log.info("[Pipeline] FINISH | {} | 총 소요: {}ms",
-                l3.isProfanity() ? "★ PROFANITY" : "SAFE", elapsed(start));
-        log.info("[Pipeline] ════════════════════════════════════");        return PipelineResponse.ofLlm(
+        // L3: LLM 최종 판단
+        // 원문과 정규화 텍스트를 함께 넘겨주어 정확한 판정 지원
+        LlmFilterService.Result l3 = llmFilterService.check(userInput, l1.normalized());
+
+        log.info("[Pipeline] 종료 | {} | 총 소요: {}ms",
+                l3.isProfanity() ? "차단(PROFANITY)" : "통과(SAFE)", elapsed(start));
+        return PipelineResponse.ofLlm(
                 userInput, 
                 l1.normalized(), 
                 l3.isProfanity(), 
                 elapsed(start),
                 new PipelineResponse.StageResults(
-                        l1.normalized(), 
-                        "통과", "통과", "통과", "통과", // Regex, Blacklist, Fuzzy, RAG 모두 통과
-                        l3.llmRaw() // LLM 결과
+                        l1.normalized(),
+                        StageStatus.PASSED.getLabel(), StageStatus.PASSED.getLabel(),
+                        StageStatus.PASSED.getLabel(), StageStatus.PASSED.getLabel(),
+                        l3.judgeOutput() != null ? l3.judgeOutput() : StageStatus.SKIPPED.getLabel()
                 )
         );
     }

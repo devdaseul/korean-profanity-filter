@@ -12,30 +12,17 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * [Spring AI Advisor] 비속어 필터링 Around Advisor
+ * 비속어 필터링 Around Advisor
  *
- * ▶ 역할:
- *   ChatClient를 통해 LLM에 메시지가 전달되기 전에
- *   자동으로 비속어 파이프라인(L1→L2→L3)을 실행하여 차단 여부를 판단.
- *
- * ▶ 동작 흐름:
- *   User 입력
- *     → [ProfanityAroundAdvisor 진입]
- *         → PipelineService.run() : L1(로컬) → L2(RAG) → L3(LLM) 순차 실행
- *         → 비속어 탐지 시: LLM 호출 없이 즉시 차단 응답 반환
- *         → 안전 판정 시: chain.nextAroundCall() 로 LLM 호출 진행
- *     → [ProfanityAroundAdvisor 반환]
- *   User 응답
- *
- * ▶ 장점:
- *   - ChatClient를 사용하는 모든 호출에 자동으로 필터링이 적용됨
- *   - FilterController의 /filter/pipeline 엔드포인트를 대체
- *   - 필터링 로직이 AI 대화 흐름 안에 자연스럽게 통합
+ * LLM 호출을 가로채 PipelineService(L1→L2→L3)를 실행하고,
+ * 탐지 시 LLM 서버 요청 없이 즉시 차단 응답을 반환한다.
  */
 @Slf4j
 @Component
@@ -44,7 +31,7 @@ public class ProfanityAroundAdvisor implements CallAroundAdvisor {
 
     private final PipelineService pipelineService;
 
-    /** Advisor 우선순위 - 가장 먼저 실행되도록 높은 우선순위 설정 */
+    // 가장 먼저 실행되도록 최우선 순위 부여
     private static final int ORDER = 0;
 
     @Override
@@ -57,51 +44,42 @@ public class ProfanityAroundAdvisor implements CallAroundAdvisor {
         return ORDER;
     }
 
-    /**
-     * ChatClient 호출 전후로 비속어 파이프라인을 실행
-     *
-     * @param request 사용자 입력이 담긴 Advisor 요청
-     * @param chain   다음 Advisor 또는 LLM 호출로 이어지는 체인
-     * @return LLM 응답 또는 차단 응답
-     */
     @Override
     public AdvisedResponse aroundCall(AdvisedRequest request, CallAroundAdvisorChain chain) {
         String userText = request.userText();
-        log.info("[ProfanityAdvisor] 입력 검사 시작: '{}'", userText);
+        log.info("[Advisor] 입력 검사 시작 | 입력: '{}'", userText);
 
-        // L1 → L2 → L3 파이프라인 실행
         PipelineResponse result = pipelineService.run(userText);
+        
+        // 컨트롤러에서 접근할 수 있도록 Request 내부에 결과를 살짝 저장해둡니다 (메타데이터 유실 방지)
+        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
+        if (attrs != null) {
+            attrs.setAttribute("pipelineResult", result, RequestAttributes.SCOPE_REQUEST);
+        }
 
         if (result.isProfanity()) {
-            // 비속어 탐지 → LLM 호출 없이 즉시 차단 응답 반환
-            log.info("[ProfanityAdvisor] 비속어 탐지 → LLM 호출 차단 (탐지 단계: {})", result.detectedBy());
+            log.info("[Advisor] 비속어 탐지 -> LLM 호출 즉시 차단 | 탐지 단계: {}", result.detectedBy());
             return buildBlockedResponse(request, result);
         }
 
-        // 안전 판정 → 다음 체인(LLM 호출)으로 진행
-        log.info("[ProfanityAdvisor] 안전 판정 → LLM 호출 진행");
+        log.info("[Advisor] 안전 판정 -> 실제 LLM 호출 진행");
         return chain.nextAroundCall(request);
     }
 
-    /**
-     * 비속어 탐지 시 LLM 응답 대신 반환할 차단 응답 생성
-     *
-     * ▶ ChatResponse 형태를 맞춰야 ChatClient 흐름이 깨지지 않음
-     */
     private AdvisedResponse buildBlockedResponse(AdvisedRequest request, PipelineResponse result) {
-        String blockedMessage = String.format(
-                "[비속어 차단] '%s' | 탐지 단계: %s",
-                result.originalText(), result.detectedBy()
-        );
+        String blockedMessage = String.format("[비속어 차단] '%s' | 해당 문장은 %s 단계에서 차단되었습니다.", 
+                result.originalText(), result.detectedBy());
 
-        ChatResponse chatResponse = new ChatResponse(
-                List.of(new Generation(new AssistantMessage(blockedMessage)))
+        return new AdvisedResponse(
+                new ChatResponse(List.of(new Generation(new AssistantMessage(blockedMessage)))), 
+                Map.of(
+                    "input",             result.originalText(),
+                    "isProfanity",       true,
+                    "detectedBy",        result.detectedBy(),
+                    "profanity_blocked", true,
+                    "pipeline_ms",       result.pipelineMs(),
+                    "stageResults",      result.stageResults()
+                )
         );
-
-        return new AdvisedResponse(chatResponse, Map.of(
-                "profanity_blocked", true,
-                "detected_by", result.detectedBy(),
-                "pipeline_ms", result.pipelineMs()
-        ));
     }
 }

@@ -28,21 +28,16 @@ public class RagFilterService {
 
     public record Result(
             String originalText,
-            String normalized,
             boolean isProfanity,
             List<String> matchedDocuments
     ) {}
 
-    public Result check(String input) {
-        log.info("[L2-RAG] ── 시작 ────────────────────────────");
-        String normalized = localFilterService.normalize(input);
-        log.info("[L2-RAG] 정규화 결과: '{}'", normalized);
-        log.info("[L2-RAG] 벡터 검색 조건 | topK={} similarityThreshold={}",
-                props.rag().topK(), props.rag().similarityThreshold());
+    public Result check(String originalInput, String normalizedText) {
+        log.info("[L2-RAG] 벡터 검색 쿼리 준비 (정규화 텍스트 사용): '{}'", normalizedText);
 
         List<Document> docs = vectorStore.similaritySearch(
         SearchRequest.builder()
-                .query(normalized)
+                .query(normalizedText)
                 .topK(props.rag().topK())
                 .similarityThreshold(props.rag().similarityThreshold())
                 .build()
@@ -52,20 +47,22 @@ public class RagFilterService {
         List<String> matched = docs.stream().map(Document::getText).toList();
 
         if (isProfanity) {
-            log.info("[L2-RAG] ★ 탐지 | 유사 문서 {}건:", matched.size());
+            log.info("[L2-RAG] 탐지 | 유사 문서 {}\uac74", matched.size());
             matched.forEach(doc -> log.info("[L2-RAG]   - '{}'", doc));
         } else {
-            log.info("[L2-RAG] 통과 | 유사 문서 없음 (threshold={} 미만)",
-                    props.rag().similarityThreshold());
+            log.info("[L2-RAG] 통과 | 유사 문서 없음");
         }
-        log.info("[L2-RAG] ── 완료 | isProfanity={} ─────────────────", isProfanity);
-        return new Result(input, normalized, isProfanity, matched);
+        return new Result(originalInput, isProfanity, matched);
     }
 
     public Map<String, Object> checkAsMap(String input) {
-        Result r = check(input);
+        // 단독 API(/api/filter/l2-rag) 호출 시나리오를 위한 정규화 처리
+        String normalized = localFilterService.normalize(input);
+        
+        Result r = check(input, normalized);
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("originalText",      r.originalText());
+        response.put("originalText",      input);
+        response.put("normalizedText",    normalized);
         response.put("isProfanity",        r.isProfanity());
         response.put("matchedDocuments",   r.matchedDocuments());
         response.put("message",            r.isProfanity()

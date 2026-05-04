@@ -1,20 +1,15 @@
 spring:
+  jmx:
+    enabled: true
   profiles:
     active: local  # 로컬 개발 시 application-local.yaml 병합
   config:
     import: classpath:filter-pipeline.yaml
-  jmx:
-    enabled: true
 
   datasource:
     url: jdbc:postgresql://localhost:5433/postgres
     username: postgres
-    password:  # application-local.yaml 에서 설정 (git 제외)
-
-  sql:
-    init:
-      mode: always          # schema.sql 을 항상 실행 (테이블 없으면 생성)
-      platform: postgresql
+    password:  # application-local.yaml 에서 설정
 
   jpa:
     hibernate:
@@ -22,13 +17,7 @@ spring:
     show-sql: false
     properties:
       hibernate:
-        format_sql: true
-
-  servlet:
-    multipart:
-      enabled: true
-      max-file-size: 200MB     # 대용량 비속어 사전 파일 업로드 허용
-      max-request-size: 210MB
+        '[format_sql]': true
 
   ai:
     ollama:
@@ -43,7 +32,7 @@ spring:
 
     vectorstore:
       pgvector:
-        table-name: profanity_vectors
+        table-name: bad_word_vectors
         dimensions: 1024
         initialize-schema: false
         index-type: HNSW
@@ -51,5 +40,5 @@ spring:
 
 logging:
   level:
-    com.lily.spring_ai_vector: DEBUG
-    org.springframework.ai: INFO
+    '[com.lily.spring_ai_vector]': INFO
+    '[org.springframework.ai.chat.client.advisor]': DEBUG

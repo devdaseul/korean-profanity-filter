@@ -8,12 +8,8 @@ import org.springframework.validation.annotation.Validated;
 import java.util.Map;
 
 /**
- * filter-pipeline.yaml 에 정의된 필터 파이프라인 설정값 바인딩
- *
- * ▶ normalize : 전처리 규칙 (시각적 치환, Qwerty 변환, 반복 글자 압축)
- * ▶ regex     : L1 정규식 패턴
- * ▶ fuzzy     : Jaccard N-Gram 유사도 임계값 (0.0~1.0)
- * ▶ rag       : L2 벡터 검색 유사도 임계값 및 topK
+ * filter-pipeline.yaml 에 정의된 필터 파이프라인 설정값 바인딩 클래스
+ * - 각 필터별 세부 설정값을 구조화하여 캡슐화
  */
 @Validated
 @ConfigurationProperties(prefix = "filter.pipeline")
