@@ -1,8 +1,8 @@
 package com.lily.spring_ai_vector.controller;
 
+import com.lily.spring_ai_vector.dto.JudgeLogResponse;
 import com.lily.spring_ai_vector.dto.RegisterRequest;
 import com.lily.spring_ai_vector.dto.RegisterResponse;
-import com.lily.spring_ai_vector.entity.LlmJudgeLog;
 import com.lily.spring_ai_vector.repository.LlmJudgeLogRepository;
 import com.lily.spring_ai_vector.service.ingest.IngestService;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
-public class AdminController {
+public class IngestController {
 
     private final IngestService ingestService;
     private final LlmJudgeLogRepository judgeLogRepository;
@@ -29,7 +29,11 @@ public class AdminController {
     }
 
     @GetMapping("/judge-logs")
-    public ResponseEntity<List<LlmJudgeLog>> getJudgeLogs() {
-        return ResponseEntity.ok(judgeLogRepository.findByIsTrainedFalse());
+    public ResponseEntity<List<JudgeLogResponse>> getJudgeLogs() {
+        List<JudgeLogResponse> logs = judgeLogRepository.findByIsTrainedFalse()
+                .stream()
+                .map(JudgeLogResponse::from)
+                .toList();
+        return ResponseEntity.ok(logs);
     }
 }

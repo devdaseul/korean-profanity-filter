@@ -2,8 +2,10 @@ package com.lily.spring_ai_vector.service.pipeline;
 
 import com.lily.spring_ai_vector.dto.PipelineResponse;
 import com.lily.spring_ai_vector.service.filter.LlmFilterService;
+import com.lily.spring_ai_vector.service.filter.LlmFilterService.LlmResult;
 import com.lily.spring_ai_vector.service.filter.LocalFilterService;
 import com.lily.spring_ai_vector.service.filter.RagFilterService;
+import com.lily.spring_ai_vector.service.filter.RagFilterService.RagResult;
 import com.lily.spring_ai_vector.enums.StageStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,12 +26,12 @@ public class PipelineService {
     private final LlmFilterService llmFilterService;
 
     public PipelineResponse run(String userInput) {
-        long start = System.currentTimeMillis();
+        long start = System.nanoTime();
         log.info("[Pipeline] 시작 | 입력: '{}'", userInput);
 
         // L1: Local Filter
         log.info("[Pipeline] L1(로컬 필터) 진입");
-        LocalFilterService.Result l1 = localFilterService.check(userInput);
+        LocalFilterService.LocalResult l1 = localFilterService.check(userInput);
         if (l1.isProfanity()) {
             log.info("[Pipeline] L1 차단 | 소요: {}ms", elapsed(start));
             return buildFastExitResponse(userInput, l1.normalized(), "L1-Local", start,
@@ -41,8 +43,7 @@ public class PipelineService {
         log.info("[Pipeline] L1 통과 -> L2(RAG) 진입");
 
         // L2: RAG 유사도 검색
-        // L1에서 생성된 정규화 텍스트와 원문을 함께 넘겨줌
-        RagFilterService.Result l2 = ragFilterService.check(userInput, l1.normalized());
+        RagResult l2 = ragFilterService.check(userInput, l1.normalized());
         if (l2.isProfanity()) {
             log.info("[Pipeline] L2 차단 | 소요: {}ms", elapsed(start));
             return PipelineResponse.ofRag(userInput, l1.normalized(), elapsed(start),
@@ -56,8 +57,7 @@ public class PipelineService {
         log.info("[Pipeline] L2 통과 -> L3(LLM) 진입");
 
         // L3: LLM 최종 판단
-        // 원문과 정규화 텍스트를 함께 넘겨주어 정확한 판정 지원
-        LlmFilterService.Result l3 = llmFilterService.check(userInput, l1.normalized());
+        LlmResult l3 = llmFilterService.check(userInput, l1.normalized());
 
         log.info("[Pipeline] 종료 | {} | 총 소요: {}ms",
                 l3.isProfanity() ? "차단(PROFANITY)" : "통과(SAFE)", elapsed(start));
@@ -81,6 +81,6 @@ public class PipelineService {
     }
 
     private long elapsed(long start) {
-        return System.currentTimeMillis() - start;
+        return (System.nanoTime() - start) / 1_000_000;
     }
 }

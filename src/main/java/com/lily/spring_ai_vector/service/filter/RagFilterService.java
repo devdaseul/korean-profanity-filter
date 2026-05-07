@@ -8,9 +8,7 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * [L2] RAG 기반 유사도 필터 서비스
@@ -26,13 +24,13 @@ public class RagFilterService {
     private final LocalFilterService localFilterService;
     private final FilterPipelineProperties props;
 
-    public record Result(
+    public record RagResult(
             String originalText,
             boolean isProfanity,
             List<String> matchedDocuments
     ) {}
 
-    public Result check(String originalInput, String normalizedText) {
+    public RagResult check(String originalInput, String normalizedText) {
         log.info("[L2-RAG] 벡터 검색 쿼리 준비 (정규화 텍스트 사용): '{}'", normalizedText);
 
         List<Document> docs = vectorStore.similaritySearch(
@@ -47,26 +45,16 @@ public class RagFilterService {
         List<String> matched = docs.stream().map(Document::getText).toList();
 
         if (isProfanity) {
-            log.info("[L2-RAG] 탐지 | 유사 문서 {}\uac74", matched.size());
+            log.info("[L2-RAG] 탐지 | 유사 문서 {}건", matched.size());
             matched.forEach(doc -> log.info("[L2-RAG]   - '{}'", doc));
         } else {
             log.info("[L2-RAG] 통과 | 유사 문서 없음");
         }
-        return new Result(originalInput, isProfanity, matched);
+        return new RagResult(originalInput, isProfanity, matched);
     }
 
-    public Map<String, Object> checkAsMap(String input) {
+    public RagResult checkAsResult(String input) {
         String normalized = localFilterService.normalize(input);
-        
-        Result r = check(input, normalized);
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("originalText",      input);
-        response.put("normalizedText",    normalized);
-        response.put("isProfanity",        r.isProfanity());
-        response.put("matchedDocuments",   r.matchedDocuments());
-        response.put("message",            r.isProfanity()
-                ? "L2-Vector DB 유사도 검사에서 차단되었습니다."
-                : "L2(RAG)를 통과하여 L3(LLM) 검토가 필요합니다.");
-        return response;
+        return check(input, normalized);
     }
 }

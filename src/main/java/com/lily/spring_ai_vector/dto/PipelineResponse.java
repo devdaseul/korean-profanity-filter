@@ -27,12 +27,12 @@ public record PipelineResponse(
     }
 
     public record StageResults(
-            String step1Normalize,
-            String step2Regex,
-            String step3Blacklist,
-            String step4Fuzzy,
-            String step5Rag,
-            Object step6Llm
+            String step1_1_Normalize,
+            String step1_2_Regex,
+            String step1_3_Blacklist,
+            String step1_4_Fuzzy,
+            String step2_Rag,
+            Object step3_Llm
     ) {}
 
     /** L1: Regex / Blacklist / Fuzzy 탐지 */

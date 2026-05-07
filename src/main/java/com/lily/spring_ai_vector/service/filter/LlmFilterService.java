@@ -5,8 +5,6 @@ import com.lily.spring_ai_vector.entity.LlmJudgeLog;
 import com.lily.spring_ai_vector.repository.LlmJudgeLogRepository;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.Map;
-
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,7 +16,6 @@ import org.springframework.util.StringUtils;
 /**
  * [L3] LLM 기반 최종 판정 서비스
  *
- * llmChatClient: ProfanityAroundAdvisor 미등록 빈 — 순환참조 방지
  * Structured Output: .entity(LlmJudgeOutput.class)로 JSON 자동 역직렬화
  */
 @Slf4j
@@ -40,7 +37,7 @@ public class LlmFilterService {
     @Value("classpath:prompts/profanity-judge-system.st")
     private Resource systemPromptResource;
 
-    public record Result(
+    public record LlmResult(
             String originalText,
             String normalized,
             LlmJudgeOutput judgeOutput,
@@ -48,10 +45,10 @@ public class LlmFilterService {
     ) {}
 
     @Transactional
-    public Result check(String originalInput, String normalizedText) {
+    public LlmResult check(String originalInput, String normalizedText) {
 
         if (!StringUtils.hasText(originalInput)) {
-            return new Result(originalInput, "", null, false);
+            return new LlmResult(originalInput, "", null, false);
         }
 
         log.info("[L3-LLM] 전달받은 정규화 텍스트 사용: '{}'", normalizedText);
@@ -79,17 +76,11 @@ public class LlmFilterService {
                 .build());
         log.info("[L3-LLM] 판정 로그 저장 완료 | id={}", saved.getId());
 
-        return new Result(originalInput, normalizedText, judgeOutput, isProfanity);
+        return new LlmResult(originalInput, normalizedText, judgeOutput, isProfanity);
     }
 
-    public Map<String, Object> checkAsMap(String input) {
+    public LlmResult checkAsResult(String input) {
         String normalized = localFilterService.normalize(input);
-        Result r = check(input, normalized);
-        Map<String, Object> response = new java.util.LinkedHashMap<>();
-        response.put("originalText",  r.originalText());
-        response.put("isProfanity",    r.isProfanity());
-        response.put("detectedBy",     r.isProfanity() ? "L3-LLM" : "미탐지");
-        response.put("llmResponse",    r.judgeOutput());
-        return response;
+        return check(input, normalized);
     }
 }
