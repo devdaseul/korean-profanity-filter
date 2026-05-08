@@ -1,33 +1,40 @@
 package com.lily.spring_ai_vector.config;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 /**
  * Spring AI ChatClient 빈 설정
- *
- * 왜 별도 Config 로 분리?
- *  - ChatClient.Builder 를 여러 서비스(ProfanityRefineService 등)에서
- *    공유하기 위해 단일 빈으로 관리
- *  - ProfanityRefineService 는 순화 전용 프롬프트를 직접 구성하므로
- *    defaultAdvisors(QuestionAnswerAdvisor) 없이 기본 ChatClient 만 주입
- *  - 향후 retry, logging, rate-limit advisor 를 이곳에서 일괄 적용 가능
  */
 @Configuration
 public class ChatClientConfig {
 
     /**
-     * 기본 ChatClient 빈
-     *
-     * QuestionAnswerAdvisor 를 붙이지 않는 이유:
-     *  - API 3(ProfanityRefineService)은 RAG 컨텍스트를 직접 프롬프트에 삽입하는 방식 사용
-     *  - Advisor 방식은 전체 VectorStore 를 동일 조건으로 검색하므로
-     *    API별 threshold/topK 를 다르게 줄 수 없음
-     *  - 서비스 레이어에서 직접 similaritySearch 를 제어하면 더 유연함
+     * 사용자 입력용 ChatClient
      */
     @Bean
+    @Primary
     public ChatClient chatClient(ChatClient.Builder builder) {
-        return builder.build();
+        return builder
+                .defaultSystem("당신은 매우 친절하고 도움이 되는 AI 어시스턴트입니다. 사용자의 질문이나 평서문 혼잣말에 대해서도 짧고 간결하게, 딱 1~2문장으로만 상냥하게 한국어로 답변해주세요.")
+                .defaultAdvisors(
+                        new SimpleLoggerAdvisor()
+                )
+                .build();
+    }
+
+    /**
+     * 내부 L3 비속어 판정용 ChatClient (무한루프 방지)
+     */
+    @Bean
+    @Qualifier("llmChatClient")
+    public ChatClient llmChatClient(ChatClient.Builder builder) {
+        return builder
+                .defaultAdvisors(new SimpleLoggerAdvisor())
+                .build();
     }
 }
